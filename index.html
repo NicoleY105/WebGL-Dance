@@ -2594,7 +2594,19 @@ function syncAndDance(){
     showMovie(S.counter);
     // Restart scheduler from this position
     if(S.timerId) clearTimeout(S.timerId);
-    S.playing=true; scheduleNext();
+    S.playing=true;
+
+    // 讓 MMD 模型解凍，並將時間軸與歌曲同步
+    if (S.glbM && S.glbM.isMMD && danceActionM) {
+      danceActionM.paused = false;
+      danceActionM.time = elapsed; // 精準對齊秒數
+    }
+    if (S.glbF && S.glbF.isMMD && danceActionF) {
+      danceActionF.paused = false;
+      danceActionF.time = elapsed; // 精準對齊秒數
+    }
+
+    scheduleNext();
     status('<b>'+name+'</b> &middot; '+Math.round(bpm)+' BPM &middot; &#127925; 對拍同步中');
     musicStatus('對拍同步 &middot; '+Math.round(bpm)+' BPM');
   } else {
@@ -2602,8 +2614,21 @@ function syncAndDance(){
     stopAudio();
     if(MP.audioCtx.state==='suspended') MP.audioCtx.resume();
     startAudio(0);
+
+    // 讓 MMD 模型解凍並從頭（第 0 秒）開始跳
+    if (S.glbM && S.glbM.isMMD && danceActionM) {
+      danceActionM.reset(); // 重置動畫到起始幀
+      danceActionM.paused = false;
+      danceActionM.time = 0;
+    }
+    if (S.glbF && S.glbF.isMMD && danceActionF) {
+      danceActionF.reset(); // 重置動畫到起始幀
+      danceActionF.paused = false;
+      danceActionF.time = 0;
+    }
+
     if(S.timerId) clearTimeout(S.timerId);
-    S.playing=false; S.counter=0; S.Look=Math.PI*0.5; S.zoom=0;
+    S.playing=false; S.counter=0; S.Look=Math.PI*1.5; S.zoom=0;
     showMovie(0); S.playing=true; scheduleNext();
     status('<b>'+name+'</b> &middot; '+Math.round(bpm)+' BPM &middot; &#127925; 跳舞中');
     musicStatus('同步中 &middot; '+Math.round(bpm)+' BPM');
@@ -2711,9 +2736,9 @@ function initDryIce() {
 
     // 設定每個粒子的移動速度 (隨機向外流動、輕微上下漂浮)
     velocities.push({
-      x: (Math.random() - 0.05) * 0.002,
-      y: (Math.random() - 0.05) * 0.0005,
-      z: (Math.random() - 0.05) * 0.002
+      x: (Math.random() - 0.5) * 0.002,
+      y: (Math.random() - 0.5) * 0.0005,
+      z: (Math.random() - 0.5) * 0.002
     });
 
     // 隨機旋轉速度（讓煙霧看起來有攪動感）
@@ -2760,13 +2785,13 @@ function updateDryIce() {
 
       x = spawnRadius * Math.cos(spawnAngle);
       z = spawnRadius * Math.sin(spawnAngle);
-      y = (Math.random() * 0.3 - 0.2) + 5; // 維持你的舞台高度
+      y = (Math.random() * 0.3 - 0.2) + 2.5; // 維持你的舞台高度
       
       // 讓重生的粒子速度擁有向外輻射發散的趨勢（看起來更像乾冰蔓延）
-      const speedMag = 0.01 + Math.random() * 0.01;
-      velocities[i].x = Math.cos(spawnAngle) * speedMag * 0.5 + (Math.random() - 0.5) * 0.005;
-      velocities[i].y = (Math.random() - 0.5) * 0.003;
-      velocities[i].z = Math.sin(spawnAngle) * speedMag * 0.5 + (Math.random() - 0.5) * 0.005;
+      const speedMag = 0.001 + Math.random() * 0.001;
+      velocities[i].x = Math.cos(spawnAngle) * speedMag * 0.5 + (Math.random() - 0.5) * 0.001;
+      velocities[i].y = (Math.random() - 0.5) * 0.0005;
+      velocities[i].z = Math.sin(spawnAngle) * speedMag * 0.5 + (Math.random() - 0.5) * 0.001;
     }
 
     // 寫回坐標
