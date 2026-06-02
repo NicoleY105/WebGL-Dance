@@ -233,14 +233,14 @@ canvas#waveform{width:100%;height:100%;display:block}
       <div style="color:#444;font-size:10px;margin-bottom:5px">或輸入路徑（需本地伺服器）</div>
       <div style="display:flex;gap:5px;align-items:center;margin-bottom:4px">
         <span style="color:#555;font-size:10px;min-width:16px">男</span>
-        <input id="path-m" type="text" value="models/nick_wilde_zootopia.glb"
+        <input id="path-m" type="text" value="model/nick_wilde_zootopia.glb"
           style="flex:1;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);
                  border-radius:4px;padding:2px 6px;color:#999;font-family:'Courier New',monospace;
                  font-size:10px;outline:none"/>
       </div>
       <div style="display:flex;gap:5px;align-items:center;margin-bottom:6px">
         <span style="color:#555;font-size:10px;min-width:16px">女</span>
-        <input id="path-f" type="text" value="models/judy_hopps_police_outfit.glb"
+        <input id="path-f" type="text" value="model/judy_hopps_police_outfit.glb"
           style="flex:1;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);
                  border-radius:4px;padding:2px 6px;color:#999;font-family:'Courier New',monospace;
                  font-size:10px;outline:none"/>
@@ -250,6 +250,18 @@ canvas#waveform{width:100%;height:100%;display:block}
                background:rgba(125,249,170,0.10);border:1px solid rgba(125,249,170,0.2);
                color:#7DF9AA;font-family:'Courier New',monospace;font-size:11px">
         從路徑載入
+      </button>
+      <div style="display:flex;gap:5px;align-items:center;margin-bottom:4px">
+        <input id="path-mmd" type="text" value="model/mmd_cat_ICY.glb"
+          style="flex:1;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);
+                 border-radius:4px;padding:2px 6px;color:#999;font-family:'Courier New',monospace;
+                 font-size:10px;outline:none"/>
+      </div>
+      <button onclick="loadDefaultMMD()"
+        style="width:100%;padding:4px 0;border-radius:5px;cursor:pointer;
+               background:rgba(125,249,170,0.10);border:1px solid rgba(125,249,170,0.2);
+               color:#7DF9AA;font-family:'Courier New',monospace;font-size:11px">
+        載入 MMD 模型
       </button>
     </div>
   </div>
@@ -2293,6 +2305,45 @@ function loadGLBFromPaths() {
 }
 window.loadGLBFromPaths = loadGLBFromPaths;
 
+function loadDefaultMMD() {
+  const pathMMD = document.getElementById('path-mmd').value.trim();
+  if (!pathMMD) {
+    status('⚠️ 請輸入 MMD 模型路徑');
+    return;
+  }
+
+  // 在載入新的 MMD 模型之前，先檢查並移除舊的模型（Slot 'F'）
+  if (S.glbF) {
+    // 1. 從 Three.js 場景中移除
+    scene.remove(S.glbF);
+    
+    // 2. 釋放記憶體（釋放 Geometry 與 Material，防止網頁記憶體洩漏）
+    S.glbF.traverse((child) => {
+      if (child.isMesh) {
+        if (child.geometry) child.geometry.dispose();
+        if (Array.isArray(child.material)) {
+          child.material.forEach(m => m.dispose());
+        } else if (child.material) {
+          child.material.dispose();
+        }
+      }
+    });
+
+    // 3. 將全域變數清空
+    S.glbF = null;
+    window.mixerF = null;
+    danceActionF = null;
+    
+    console.log('已清理原本的舊模型');
+  }
+
+  status('正在切換為 MMD 模型...');
+  
+  // 4. 呼叫載入函式
+  loadGLB(pathMMD, 'M'); 
+}
+window.loadDefaultMMD = loadDefaultMMD;
+
 function status(html) {
   document.getElementById('status').innerHTML = html;
 }
@@ -2559,6 +2610,69 @@ function syncAndDance(){
   }
 }
 window.syncAndDance=syncAndDance;
+
+// 新增：允許透過遠端/本機 URL 路徑載入音訊，並自動對接離線 BPM 分析引擎
+async function fetchAndLoadAudioFromPath(audioUrl, friendlyName) {
+  musicStatus('串流讀取中…');
+  document.getElementById('track-name').textContent = friendlyName;
+  document.getElementById('track-sub').textContent = '遠端自動配置';
+  document.getElementById('track-info').classList.add('visible');
+  document.getElementById('bpm-big').textContent = '…';
+  document.getElementById('bpm-confidence').textContent = '分析中';
+  document.getElementById('btn-play-audio').disabled = true;
+  document.getElementById('btn-sync-mp').disabled = true;
+  showABar(0);
+
+  // 初始化 MP 的 AudioContext（防呆）
+  if (!MP.audioCtx) {
+    MP.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    MP.gainNode = MP.audioCtx.createGain();
+    MP.gainNode.gain.value = 0.85;
+    MP.gainNode.connect(MP.audioCtx.destination);
+  }
+  if (MP.audioCtx.state === 'suspended') await MP.audioCtx.resume();
+  stopAudio();
+
+  try {
+    // 1. 透過 fetch 獲取音訊資料
+    const response = await fetch(audioUrl);
+    if (!response.ok) throw new Error(`無法讀取音訊檔案 (HTTP ${response.status})`);
+    
+    showABar(20); musicStatus('下載完成，解碼中…');
+    const arrayBuffer = await response.arrayBuffer();
+    
+    // 2. 接回原本的 Web Audio 解碼與 BPM 分析引擎
+    MP.audioBuffer = await MP.audioCtx.decodeAudioData(arrayBuffer);
+    showABar(50); musicStatus('分析 BPM…');
+    
+    drawWaveform(MP.audioBuffer);
+    const bpm = await analyseBpm(MP.audioBuffer, p => showABar(50 + p * 50));
+    
+    showABar(100); setTimeout(hideABar, 600);
+    
+    // 3. 同步數據至全局跳舞引擎
+    MP.detectedBpm = bpm;
+    document.getElementById('bpm-big').textContent = Math.round(bpm);
+    document.getElementById('bpm-confidence').textContent = '自動配對完成';
+    document.getElementById('bpm-manual').value = Math.round(bpm);
+    
+    audio.detectedBPM = bpm;
+    _computedInterval = (60000 / (bpm * BEAT_EVERY)) / S.speedMult;
+    document.getElementById('bpm-val').textContent = Math.round(bpm);
+    
+    document.getElementById('btn-play-audio').disabled = false;
+    document.getElementById('btn-sync-mp').disabled = false;
+    
+    musicStatus('<b>' + Math.round(bpm) + ' BPM</b> · 音樂就緒');
+    status(`模型配樂 <b>${friendlyName}</b> 自動載入成功！按 <b>Space</b> 或 <b>同步跳舞</b> 開始`);
+  } catch (e) {
+    hideABar();
+    musicStatus('❌ ' + e.message);
+    status('配樂自動載入失敗：' + e.message);
+  }
+}
+// 讓這個函式在全域環境中也能被直接調用
+window.fetchAndLoadAudioFromPath = fetchAndLoadAudioFromPath;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SECTION 14 — DRY ICE PARTICLE SYSTEM
