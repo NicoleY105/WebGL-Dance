@@ -2033,6 +2033,7 @@ function tick() {
     showMovie(0);
     status('播放完畢 — 按 <b>Space</b> 重播');
     if (S.audioEl) S.audioEl.pause();
+    if (typeof MP !== 'undefined' && MP.playing) stopAudio();
   }
 }
 
@@ -2102,12 +2103,6 @@ function togglePlayback() {
         S.audioEl.play().catch(() => {});
       }
     }
-    
-    // // 4. 上傳 MP 音訊播放 (與 syncAndDance 邏輯對接)
-    // if (typeof MP !== 'undefined' && MP.audioBuffer && !MP.playing) {
-    //   if (MP.audioCtx && MP.audioCtx.state === 'suspended') MP.audioCtx.resume();
-    //   startAudio(MP.pauseOffset || 0); // 呼叫 SECTION 13 的播放
-    // }
 
     scheduleNext();
   }
